@@ -55,26 +55,7 @@
 
                 <div id="panel-script" class="control-group hidden">
                     <div class="button-row">
-                        <select id="select-script">
-                            <option value="fib">Fibonacci (16-bit)</option>
-                            <option value="mul">Multiply 13 × 11</option>
-                            <option value="gcd">GCD(84, 36)</option>
-                            <option value="primes">Primes below 40</option>
-                            <option value="countdown">Countdown 10 → 0</option>
-                            <option value="collatz">Collatz from 7</option>
-                            <option value="sort8">Bubble sort of 8 (array in RAM)</option>
-                            <option value="sieve">Sieve of Eratosthenes (primes &lt; 16)</option>
-                            <option value="reverse">Reverse an array</option>
-                            <option value="running">Running totals</option>
-                            <option value="stack">Stack: push then pop</option>
-                            <option value="manyvars">8 variables (spill to RAM)</option>
-                            <option value="bubble">Bubble sort (4 in registers)</option>
-                            <option value="sincos">Sine &amp; cosine (Minsky circle)</option>
-                            <option value="lcg">Random numbers (LCG)</option>
-                            <option value="divmod">Divide 200 / 7 with remainder</option>
-                            <option value="isqrt">Integer square root of 200</option>
-                            <option value="popcount">Count 1 bits</option>
-                        </select>
+                        <select id="select-script"></select>
                         <button id="btn-load-script">Load</button>
                     </div>
                     <label>
@@ -88,8 +69,7 @@ let a = 1, b;        variables: the most-used go
 let v = [3, 1, 4];   array in RAM (constants)
 let buf[8];          array of 8 zeros
 v[i]  v[i + 1] = x;  v[i] += 2;  v[i]++;
-                     (16 bytes of RAM in all;
-                     no bounds check: wraps at 16)
+                      (<span class="ram-all">16 bytes of RAM in all; no bounds check: wraps at 16</span>)
 a = b + 3;  a += 2;  a++;  a--;
 + - &amp; | ^ ~ &lt;&lt; &gt;&gt;   8-bit, wraps at 256
 * by a power of two  (no mul/div hardware)
@@ -102,7 +82,7 @@ out(expr);   halt();
 Complex expressions need spare registers;
 the compiler moves variables to RAM to free them.
                     </details>
-                    <details class="readout asm-details" open><summary>Compiled assembly (<span id="compiled-size">—</span>/64 instructions)</summary><pre id="compiled-asm"></pre></details>
+                    <details class="readout asm-details" open><summary>Compiled assembly (<span id="compiled-size">—</span>/<span class="rom-note">64</span> instructions)</summary><pre id="compiled-asm"></pre></details>
                     <label>
                         Max cycles: <input type="number" id="input-max-cycles-script" value="20000" min="1">
                     </label>
@@ -110,22 +90,11 @@ the compiler moves variables to RAM to free them.
 
                 <div id="panel-cpu" class="control-group hidden">
                     <div class="button-row">
-                        <select id="select-program">
-                            <option value="fib">Fibonacci (16-bit)</option>
-                            <option value="mul">Multiply 13 × 11 (shift-add)</option>
-                            <option value="gcd">GCD(84, 36)</option>
-                            <option value="primes">Primes below 40</option>
-                            <option value="countdown">Countdown 10 → 0</option>
-                            <option value="bubble">Bubble sort (4 in registers)</option>
-                            <option value="sincos">Sine &amp; cosine (Minsky circle)</option>
-                            <option value="lcg">Random numbers (LCG)</option>
-                            <option value="sort8">Bubble sort of 8 in RAM (LD/ST)</option>
-                            <option value="sum">Array sum (.data + LD)</option>
-                        </select>
+                        <select id="select-program"></select>
                         <button id="btn-load-program">Load</button>
                     </div>
                     <label>
-                        Program (≤ 64 instructions, .data for RAM):
+                        Program (<span id="prog-note">≤ 64 instructions, .data for RAM</span>):
                         <textarea id="input-program" rows="14" spellcheck="false" wrap="off"></textarea>
                     </label>
                     <details class="readout">
@@ -139,9 +108,9 @@ SUB  rd, rs     rd = rd - rs
 AND/OR/XOR rd, rs
 SHL  rd         rd = rd &lt;&lt; 1 (= ADD rd, rd)
 SHR  rd         rd = rd &gt;&gt; 1
-LD   rd, [rs+k] rd = RAM[(rs + k) mod 16]
-ST   rd, [rs+k] RAM[(rs + k) mod 16] = rd
-LD/ST rd, [k]   fixed address k (0-15)
+LD   rd, [rs+k] rd = RAM[(rs + k) mod <span class="ram-mod">16</span>]
+ST   rd, [rs+k] RAM[(rs + k) mod <span class="ram-mod">16</span>] = rd
+LD/ST rd, [k]   fixed address k (0-<span class="ram-max">15</span>)
 .data 1, 2, 3   preload RAM from address 0
 ADDI rd, imm    rd = rd + imm (-128..255)
 JMP  label
@@ -149,7 +118,7 @@ JZ   rd, label  jump if rd == 0
 JNZ  rd, label  jump if rd != 0
 JLT  rd, rs, label  jump if rd &lt; rs (unsigned)
 OUT  rd         append rd to output
-regs r0-r3, 16-byte RAM, 8-bit wrap;
+regs r0-r3, <span class="ram-size">16-byte RAM</span>, 8-bit wrap;
 ; or # comments
                     </details>
                     <label>
@@ -248,6 +217,23 @@ regs r0-r3, 16-byte RAM, 8-bit wrap;
                     </label>
                 </div>
 
+                <div class="button-row">
+                    <label>
+                        ROM (instructions):
+                        <select id="select-rom">
+                            <option value="32">32</option>
+                            <option value="64" selected>64</option>
+                            <option value="128">128</option>
+                        </select>
+                    </label>
+                    <label>
+                        RAM (bytes):
+                        <select id="select-ram">
+                            <option value="16" selected>16</option>
+                            <option value="32">32</option>
+                        </select>
+                    </label>
+                </div>
                 <label>
                     Fabric layout:
                     <select id="select-layout">

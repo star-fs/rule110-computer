@@ -61,6 +61,12 @@ function reduceTree(c, xs, f, empty) {
 function fullAdd(c, a, b, cin) { const p = XOR(c, a, b); return [XOR(c, p, cin), NAND(c, NAND(c, a, b), NAND(c, p, cin))]; }
 function addBits(c, A, B, cin) { const s = []; for (let i = 0; i < A.length; i++) { const [si, co] = fullAdd(c, A[i], B[i], cin); s.push(si); cin = co; } return [s, cin]; }
 function decode2(c, b0, b1) { const n0 = NOT(c, b0), n1 = NOT(c, b1); return [AND(c, n0, n1), AND(c, b0, n1), AND(c, n0, b1), AND(c, b0, b1)]; }
+function decodeN(c, bits) {
+    return Array.from({ length: 2 ** bits.length }, (_, k) => {
+        const lits = bits.map((b, i) => (k >> i) & 1 ? b : NOT(c, b));
+        return lits.slice(1).reduce((a, x) => AND(c, a, x), lits[0]);
+    });
+}
 function muxTree(c, sel, items) {
     let xs = items;
     for (let k = 0; xs.length > 1; k++) { const n = []; for (let i = 0; i < xs.length; i += 2) n.push(MUX(c, sel[k], xs[i], xs[i + 1] ?? 0)); xs = n; }
@@ -207,15 +213,24 @@ const bin = (v, n) => v.toString(2).padStart(n, '0');
 
 // ---------------------------------------------------------------- CPU
 
-// Opcode 8 is the memory instruction: imm bit 7 = store, bit 6 = absolute address, bits 3-0 = offset.
-//   LD rd, [rs+k]  rd = RAM[(rs + k) & 15]     ST rd, [rs+k]  RAM[(rs + k) & 15] = rd     [k] = absolute
+// Opcode 8 is the memory instruction: imm bit 7 = store, bit 6 = absolute address,
+// the low log2(RAM_BYTES) bits = offset (4 bits for 16-byte RAM, 5 for 32-byte RAM).
+//   LD rd, [rs+k]  rd = RAM[(rs + k) & (RAM-1)]   ST rd, [rs+k]  RAM[(rs + k) & (RAM-1)] = rd   [k] = absolute
 // (SHL rd is kept as an assembler shorthand for ADD rd, rd, which frees its old opcode.)
 const ISA = ['HALT', 'LDI', 'MOV', 'ADD', 'SUB', 'AND', 'OR', 'XOR', 'MEM', 'SHR', 'ADDI', 'JMP', 'JZ', 'JNZ', 'JLT', 'OUT'];
 const ARGS = { HALT: '', NOP: '', LDI: 'ri', MOV: 'rr', ADD: 'rr', SUB: 'rr', AND: 'rr', OR: 'rr', XOR: 'rr', SHL: 'r', SHR: 'r', ADDI: 'ri', JMP: 'l', JZ: 'rl', JNZ: 'rl', JLT: 'rrl', OUT: 'r', LD: 'rm', ST: 'rm' };
-const ROM_WORDS = 64, PC_BITS = Math.log2(ROM_WORDS), PC_MASK = ROM_WORDS - 1, RAM_BYTES = 16;
-// bit offsets of the CPU circuit's state inputs and next-state outputs
-const CPU_IN = { R: 0, PC: 32, H: 32 + PC_BITS, ROM: 33 + PC_BITS, RAM: 33 + PC_BITS + 16 * ROM_WORDS };
-const CPU_OUT = { R: 0, PC: 32, H: 32 + PC_BITS, OUTV: 33 + PC_BITS, OUT: 34 + PC_BITS, RAM: 42 + PC_BITS };
+// The CPU size is selectable: ROM_WORDS (power of two) and RAM_BYTES (power of two, 4 or 5 address bits).
+let ROM_WORDS = 64, RAM_BYTES = 16, PC_BITS, PC_MASK, CPU_IN, CPU_OUT;
+const cpuFabrics = {};
+function setCpuSize(romWords, ramBytes) {
+    ROM_WORDS = romWords; RAM_BYTES = ramBytes;
+    PC_BITS = Math.log2(ROM_WORDS); PC_MASK = ROM_WORDS - 1;
+    // bit offsets of the CPU circuit's state inputs and next-state outputs
+    CPU_IN = { R: 0, PC: 32, H: 32 + PC_BITS, ROM: 33 + PC_BITS, RAM: 33 + PC_BITS + 16 * ROM_WORDS };
+    CPU_OUT = { R: 0, PC: 32, H: 32 + PC_BITS, OUTV: 33 + PC_BITS, OUT: 34 + PC_BITS, RAM: 42 + PC_BITS };
+    for (const k of Object.keys(cpuFabrics)) delete cpuFabrics[k];
+}
+setCpuSize(64, 16);
 
 const PROGRAMS = {
     fib: `; 16-bit Fibonacci on the 8-bit CPU: a = r1:r0 and b = r3:r2 (high:low).
@@ -406,6 +421,62 @@ loop: LD r3, [r0]
       HALT`,
 };
 
+// 32-byte RAM variants of the examples that can use the extra room: the data is doubled
+// to fill the RAM. Names not listed here are shared with the 16-byte set above.
+const PROGRAMS_32 = {
+    sort8: `; bubble sort of 16 random numbers in RAM[0..15], using LD/ST [r+k]
+      .data $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND
+      LDI r2, 16
+      LDI r0, 0
+show: LD r1, [r0]       ; print the list as loaded
+      OUT r1
+      ADDI r0, 1
+      JLT r0, r2, show
+      LDI r3, 15        ; compare pairs below index r3
+pass: LDI r0, 0         ; i
+cmp:  LD r1, [r0]       ; x = a[i]
+      LD r2, [r0+1]     ; y = a[i+1]
+      JLT r1, r2, next  ; already in order
+      ST r2, [r0]       ; swap
+      ST r1, [r0+1]
+next: ADDI r0, 1
+      JLT r0, r3, cmp
+      ADDI r3, -1       ; the largest has bubbled to the top
+      JNZ r3, pass
+      LDI r2, 16
+      LDI r0, 0
+done: LD r1, [r0]       ; print the sorted list
+      OUT r1
+      ADDI r0, 1
+      JLT r0, r2, done
+      HALT`,
+    sum: `; sum of an array: .data preloads 16 RAM bytes, LD [r0] walks it
+      .data 12, 7, 30, 1, 22, 9, 15, 4, 8, 21, 13, 2, 27, 11, 19, 5
+      LDI r0, 0         ; index
+      LDI r1, 0         ; sum
+      LDI r2, 16        ; length
+loop: LD r3, [r0]
+      ADD r1, r3
+      ADDI r0, 1
+      JLT r0, r2, loop
+      OUT r1            ; 206
+      HALT`,
+};
+
+// Menu labels per example; the size-dependent ones pick the text for the selected RAM.
+const PROGRAM_LABELS = {
+    fib: 'Fibonacci (16-bit)',
+    mul: 'Multiply 13 × 11 (shift-add)',
+    gcd: 'GCD(84, 36)',
+    primes: 'Primes below 40',
+    countdown: 'Countdown 10 → 0',
+    bubble: 'Bubble sort (4 in registers)',
+    sincos: 'Sine & cosine (Minsky circle)',
+    lcg: 'Random numbers (LCG)',
+    sort8: { 16: 'Bubble sort of 8 in RAM (LD/ST)', 32: 'Bubble sort of 16 in RAM (LD/ST)' },
+    sum: { 16: 'Array sum (.data + LD)', 32: 'Array sum of 16 (.data + LD)' },
+};
+
 function assemble(src) {
     const items = [], labels = {}, ram = new Uint8Array(RAM_BYTES);
     let nData = 0;
@@ -439,7 +510,7 @@ function assemble(src) {
             const m = /^\[\s*(?:r([0-3])\s*(?:\+\s*(\w+))?|(\w+))\s*\]$/i.exec(t);
             if (!m) throw new Error(`line ${ln}: expected a memory operand like [r1], [r1+3] or [5], got '${t}'`);
             const off = Number(m[2] ?? m[3] ?? 0);
-            if (!Number.isInteger(off) || off < 0 || off > 15) throw new Error(`line ${ln}: memory offset must be 0-15, got '${m[2] ?? m[3]}'`);
+            if (!Number.isInteger(off) || off < 0 || off > RAM_BYTES - 1) throw new Error(`line ${ln}: memory offset must be 0-${RAM_BYTES - 1}, got '${m[2] ?? m[3]}'`);
             return { base: m[1] === undefined ? null : +m[1], off };
         };
         let rd = 0, rs = 0, imm = 0, nr = 0, op = mn === 'NOP' ? 2 : mn === 'SHL' ? 3 : mn === 'LD' || mn === 'ST' ? 8 : ISA.indexOf(mn);
@@ -458,7 +529,7 @@ function assemble(src) {
 
 function disasm(w) {
     const op = w >> 12, rd = `r${(w >> 10) & 3}`, rs = `r${(w >> 8) & 3}`, imm = w & 255;
-    if (op === 8) { const off = imm & 15; return `${imm & 128 ? 'ST' : 'LD'} ${rd}, [${imm & 64 ? off : rs + (off ? '+' + off : '')}]`; }
+    if (op === 8) { const off = imm & (RAM_BYTES - 1); return `${imm & 128 ? 'ST' : 'LD'} ${rd}, [${imm & 64 ? off : rs + (off ? '+' + off : '')}]`; }
     const m = ISA[op], j = imm & PC_MASK;
     const a = { '': [], ri: [rd, imm], rr: [rd, rs], r: [rd], l: [j], rl: [rd, j], rrl: [rd, rs, j] }[ARGS[m]];
     return `${m} ${a.join(', ')}`.trim();
@@ -478,7 +549,7 @@ function cpuRef(s, rom) {
         case 5: wr = A & B; break;
         case 6: wr = A | B; break;
         case 7: wr = A ^ B; break;
-        case 8: { const addr = imm & 64 ? imm & 15 : (B + (imm & 15)) & 15; if (imm & 128) n.ram[addr] = A; else wr = s.ram[addr]; break; }
+        case 8: { const mask = RAM_BYTES - 1, addr = (imm & 64) ? (imm & mask) : (B + (imm & mask)) & mask; if (imm & 128) n.ram[addr] = A; else wr = s.ram[addr]; break; }
         case 9: wr = A >> 1; break;
         case 10: wr = (A + imm) & 255; break;
         case 11: pc = imm & PC_MASK; break;
@@ -506,7 +577,7 @@ function buildCPU() {
     const dec = Array.from({ length: 16 }, (_, k) => AND(c, lo[k & 3], hi[k >> 2]));
     c.tag = 'register read A (rd)'; const A = Array.from({ length: 8 }, (_, b) => muxTree(c, rd, R.map(r => r[b])));
     c.tag = 'register read B (rs)'; const B = Array.from({ length: 8 }, (_, b) => muxTree(c, rs, R.map(r => r[b])));
-    c.tag = 'memory address'; const off = imm.slice(0, 4), [based] = addBits(c, B.slice(0, 4), off, 0);
+    c.tag = 'memory address'; const na = Math.log2(RAM_BYTES), off = imm.slice(0, na), [based] = addBits(c, B.slice(0, na), off, 0);
     const addr = based.map((x, b) => MUX(c, imm[6], x, off[b]));
     c.tag = 'memory read'; const mem = Array.from({ length: 8 }, (_, b) => muxTree(c, addr, RAM.map(w => w[b])));
     const isLoad = AND(c, dec[8], NOT(c, imm[7])), isStore = AND(c, dec[8], imm[7]);
@@ -520,8 +591,11 @@ function buildCPU() {
     const notH = NOT(c, H), we = AND(c, OR(c, reduceTree(c, [1, 2, 3, 4, 5, 6, 7, 9, 10].map(k => dec[k]), OR, 0), isLoad), notH);
     c.tag = 'register write'; const rdDec = decode2(c, rd[0], rd[1]);
     const newR = R.map((reg, r) => { const wr = AND(c, we, rdDec[r]); return reg.map((x, b) => MUX(c, wr, x, res[b])); });
-    c.tag = 'memory write'; const stEn = AND(c, isStore, notH), aLo = decode2(c, addr[0], addr[1]), aHi = decode2(c, addr[2], addr[3]);
-    const newRAM = RAM.map((w, a) => { const wr = AND(c, stEn, AND(c, aLo[a & 3], aHi[a >> 2])); return w.map((x, b) => MUX(c, wr, x, A[b])); });
+    c.tag = 'memory write'; const stEn = AND(c, isStore, notH);
+    let onehot;
+    if (na === 4) { const aLo = decode2(c, addr[0], addr[1]), aHi = decode2(c, addr[2], addr[3]); onehot = Array.from({ length: 16 }, (_, a) => AND(c, aLo[a & 3], aHi[a >> 2])); }
+    else onehot = decodeN(c, addr);
+    const newRAM = RAM.map((w, a) => { const wr = AND(c, stEn, onehot[a]); return w.map((x, b) => MUX(c, wr, x, A[b])); });
     c.tag = 'branch'; const zero = NOT(c, reduceTree(c, A, OR, 0));
     const jump = AND(c, notH, reduceTree(c, [dec[11], AND(c, dec[12], zero), AND(c, dec[13], NOT(c, zero)), AND(c, dec[14], lt)], OR, 0));
     c.tag = 'PC increment'; const inc = []; let cy = 1; for (const p of PC) { inc.push(XOR(c, p, cy)); cy = AND(c, p, cy); }
@@ -531,7 +605,6 @@ function buildCPU() {
     return { c, outs: [...newR.flat(), ...pcN, hold, outv, ...A, ...newRAM.flat()] };
 }
 
-const cpuFabrics = {};
 function makeCpuTask(src, maxCycles) {
     const { rom, ram: ramInit, size } = assemble(src);
     if (!cpuFabrics[fabricLayout]) { const { c, outs } = buildCPU(); cpuFabrics[fabricLayout] = scheduleFabric(c, outs); }
@@ -875,6 +948,73 @@ c = a + b; d = b + c; e = c + d; f = d + e; g = e + f; h = f + g;
 out(a); out(b); out(c); out(d); out(e); out(f); out(g); out(h);`,
 };
 
+// 32-byte RAM variants: arrays, stacks and spills doubled to fill the RAM.
+// (sieve's 32 flags and reverse's 20 elements need the 32-byte CPU and won't
+// compile on the 16-byte one.)
+const SCRIPTS_32 = {
+    sort8: `// bubble sort of 16 random numbers stored in RAM
+let a = [$RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND, $RAND];
+let n = 16, i, x, y;
+for (i = 0; i < n; i++) out(a[i]);          // the list as loaded
+while (n != 1) {                            // each pass bubbles the largest up
+    n--;
+    for (i = 0; i < n; i++) {
+        x = a[i]; y = a[i + 1];
+        if (y < x) { a[i] = y; a[i + 1] = x; }
+    }
+}
+for (i = 0; i < 16; i++) out(a[i]);          // sorted`,
+    sieve: `// sieve of Eratosthenes: primes below 32, one flag byte per number
+let composite[32];
+for (let p = 2; p < 32; p++) {
+    if (composite[p]) continue;
+    out(p);
+    for (let m = p + p; m < 32; m += p) composite[m] = 1;
+}`,
+    reverse: `// reverse an array in place, swapping from both ends
+let a = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+let i = 0, j = 19, t;
+while (i < j) { t = a[i]; a[i] = a[j]; a[j] = t; i++; j--; }
+for (i = 0; i < 20; i++) out(a[i]);`,
+    running: `// running totals: each element becomes the sum of itself and all before it
+let a = [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3];
+for (let i = 1; i < 16; i++) a[i] += a[i - 1];
+for (let i = 0; i < 16; i++) out(a[i]);
+// plot: running total`,
+    stack: `// a stack in RAM: push 10 numbers, then pop them (last in, first out)
+let stack[16], sp = 0, v = 10;
+while (sp < 10) { stack[sp] = v; sp++; v += 7; }
+while (sp != 0) { sp--; out(stack[sp]); }`,
+    manyvars: `// more than 4 variables: the least-used ones live in RAM automatically
+let a = 1, b = 1, c, d, e, f, g, h, i, j, k, l;
+c = a + b; d = b + c; e = c + d; f = d + e; g = e + f; h = f + g;
+i = g + h; j = h + i; k = i + j; l = j + k;
+out(a); out(b); out(c); out(d); out(e); out(f); out(g); out(h);
+out(i); out(j); out(k); out(l);`,
+};
+
+// Menu labels per example; the size-dependent ones pick the text for the selected RAM.
+const SCRIPT_LABELS = {
+    fib: 'Fibonacci (16-bit)',
+    mul: 'Multiply 13 × 11',
+    gcd: 'GCD(84, 36)',
+    primes: 'Primes below 40',
+    countdown: 'Countdown 10 → 0',
+    collatz: 'Collatz from 7',
+    bubble: 'Bubble sort (4 in registers)',
+    sincos: 'Sine & cosine (Minsky circle)',
+    lcg: 'Random numbers (LCG)',
+    divmod: 'Divide 200 / 7 with remainder',
+    isqrt: 'Integer square root of 200',
+    popcount: 'Count 1 bits',
+    sort8: { 16: 'Bubble sort of 8 (array in RAM)', 32: 'Bubble sort of 16 (array in RAM)' },
+    sieve: { 16: 'Sieve of Eratosthenes (primes < 16)', 32: 'Sieve of Eratosthenes (primes < 32)' },
+    reverse: { 16: 'Reverse an array', 32: 'Reverse an array of 20' },
+    running: { 16: 'Running totals', 32: 'Running totals (16 elements)' },
+    stack: { 16: 'Stack: push then pop', 32: 'Stack of 16: push then pop' },
+    manyvars: { 16: '8 variables (spill to RAM)', 32: '12 variables (spill to RAM)' },
+};
+
 const SCRIPT_KEYWORDS = new Set(['let', 'var', 'const', 'if', 'else', 'while', 'for', 'break', 'continue', 'out', 'print', 'halt', 'true', 'false']);
 const SCRIPT_OPS = { '+': 'ADD', '-': 'SUB', '&': 'AND', '|': 'OR', '^': 'XOR' };
 const SCRIPT_NEG = { '<': '>=', '>=': '<', '>': '<=', '<=': '>', '==': '!=', '!=': '==' };
@@ -957,7 +1097,7 @@ function parseScript(src) {
             const tk = peek(), name = ident();
             if (is('[')) {
                 next(); const n = next();
-                if (n.t !== 'num' || n.v < 1 || n.v > 16) fail('array size must be a number from 1 to 16', n);
+                if (n.t !== 'num' || n.v < 1 || n.v > RAM_BYTES) fail(`array size must be a number from 1 to ${RAM_BYTES}`, n);
                 eat(']'); items.push({ name, array: true, size: n.v, init: null, line: tk.line });
             } else if (is('=')) {
                 next();
@@ -970,7 +1110,7 @@ function parseScript(src) {
                         if (!is(']')) eat(',');
                     }
                     next();
-                    if (!vals.length || vals.length > 16) fail('an array literal needs 1 to 16 values', tk);
+                    if (!vals.length || vals.length > RAM_BYTES) fail(`an array literal needs 1 to ${RAM_BYTES} values`, tk);
                     items.push({ name, array: true, size: vals.length, init: vals, line: tk.line });
                 } else items.push({ name, e: expr(), line: tk.line });
             } else items.push({ name, e: null, line: tk.line });
@@ -1081,11 +1221,11 @@ function genScript(ast, srcLines, regVars, memVars, arrays, arrBytes, ram) {
         const arr = arrays.get(e.name);
         if (!arr) { if (regOf.has(e.name) || memOf.has(e.name)) throw new Error(`line ${e.line}: '${e.name}' is not an array`); known(e.name, e.line); }
         let idx = e.index, off = arr.base;
-        if (idx.k === 'num') return emit(`${op} ${R(r)}, [${(arr.base + idx.v) & 15}]`);
+        if (idx.k === 'num') return emit(`${op} ${R(r)}, [${(arr.base + idx.v) & (RAM_BYTES - 1)}]`);
         if (idx.k === 'bin' && (idx.op === '+' || idx.op === '-') && idx.b.k === 'num') {
             const o = arr.base + (idx.op === '+' ? idx.b.v : -idx.b.v);
-            if (o >= 0 && o <= 15) { off = o; idx = idx.a; }
-        } else if (idx.k === 'bin' && idx.op === '+' && idx.a.k === 'num' && arr.base + idx.a.v <= 15) { off = arr.base + idx.a.v; idx = idx.b; }
+            if (o >= 0 && o <= RAM_BYTES - 1) { off = o; idx = idx.a; }
+        } else if (idx.k === 'bin' && idx.op === '+' && idx.a.k === 'num' && arr.base + idx.a.v <= RAM_BYTES - 1) { off = arr.base + idx.a.v; idx = idx.b; }
         const m = inUse, ri = operand(idx);
         emit(`${op} ${R(r)}, [${R(ri)}${off ? '+' + off : ''}]`);
         inUse = m;
@@ -1864,6 +2004,43 @@ function drawOutPlot(force) {
 
 function showTaskPanel() { for (const k of ['script', 'cpu', 'arith', 'expr', 'classic']) $(`panel-${k}`).classList.toggle('hidden', $('select-task').value !== k); }
 
+// keep the static "64 instructions / 16-byte RAM" texts in the panels in sync with the CPU size
+function updateSizeTexts() {
+    const setAll = (cls, txt) => document.querySelectorAll('.' + cls).forEach(el => el.textContent = txt);
+    setAll('rom-note', ROM_WORDS);
+    setAll('ram-all', `${RAM_BYTES} bytes of RAM in all; no bounds check: wraps at ${RAM_BYTES}`);
+    setAll('ram-mod', String(RAM_BYTES));
+    setAll('ram-max', String(RAM_BYTES - 1));
+    setAll('ram-size', `${RAM_BYTES}-byte RAM`);
+    const prog = $('prog-note'); if (prog) prog.textContent = `≤ ${ROM_WORDS} instructions, .data for RAM`;
+}
+
+// Loading an example substitutes the version that matches the selected RAM size:
+// the 32-byte set (bigger data) applies only once 32-byte RAM is selected; below
+// it the 16-byte set is used.
+const exampleText = (base, ext, name) => (ext && name in ext && RAM_BYTES >= 32) ? ext[name] : base[name];
+function fillExampleSelect(sel, labels) {
+    const keep = sel.value;
+    sel.innerHTML = '';
+    for (const [name, l] of Object.entries(labels)) {
+        const o = document.createElement('option');
+        o.value = name;
+        o.textContent = typeof l === 'string' ? l : l[RAM_BYTES];
+        sel.appendChild(o);
+    }
+    if (keep && [...sel.options].some(o => o.value === keep)) sel.value = keep;
+}
+// Which example (if any) currently sits in each textarea, so switching RAM size can
+// substitute the matching version without clobbering a hand-typed program.
+const exampleLoaded = { program: null, script: null };
+function setExample(kind) {
+    const [sel, ta, base, ext] = kind === 'program'
+        ? [$('select-program'), $('input-program'), PROGRAMS, PROGRAMS_32]
+        : [$('select-script'), $('input-script'), SCRIPTS, SCRIPTS_32];
+    ta.value = withRandoms(exampleText(base, ext, sel.value));
+    exampleLoaded[kind] = sel.value;
+}
+
 function buildRuleWidgets() {
     const table = $('rule-table');
     for (let i = 7; i >= 0; i--) {
@@ -1906,8 +2083,10 @@ function buildRuleWidgets() {
 
 function setupEvents() {
     $('select-task').onchange = () => { showTaskPanel(); compile(); };
-    $('btn-load-program').onclick = () => { $('input-program').value = withRandoms(PROGRAMS[$('select-program').value]); compile(); };
-    $('btn-load-script').onclick = () => { $('input-script').value = withRandoms(SCRIPTS[$('select-script').value]); compile(); };
+    $('btn-load-program').onclick = () => { setExample('program'); compile(); };
+    $('btn-load-script').onclick = () => { setExample('script'); compile(); };
+    $('input-program').oninput = () => { exampleLoaded.program = null; };
+    $('input-script').oninput = () => { exampleLoaded.script = null; };
     for (const id of ['select-classic-start', 'select-classic-edge', 'input-classic-width', 'input-classic-gens', 'input-classic-pattern', 'input-classic-density']) $(id).onchange = compile;
     $('select-classic-style').onchange = e => { state.classicStyle = e.target.value; invalidatePaint(); };
     $('btn-load-expr').onclick = () => { $('input-expr').value = EXPRS[$('select-expr').value]; compile(); };
@@ -1922,6 +2101,16 @@ function setupEvents() {
     });
     plot.addEventListener('mouseleave', () => { plotState.hover = -1; drawOutPlot(); });
     $('select-layout').onchange = e => { fabricLayout = e.target.value; compile(); };
+    $('select-rom').onchange = () => { setCpuSize(+$('select-rom').value, +$('select-ram').value); updateSizeTexts(); compile(); };
+    $('select-ram').onchange = () => {
+        setCpuSize(+$('select-rom').value, +$('select-ram').value);
+        fillExampleSelect($('select-program'), PROGRAM_LABELS);
+        fillExampleSelect($('select-script'), SCRIPT_LABELS);
+        if (exampleLoaded.program) setExample('program');   // substitute the version for the new size
+        if (exampleLoaded.script) setExample('script');
+        updateSizeTexts();
+        compile();
+    };
     $('btn-play').onclick = () => { if (!state.done && state.fab) { state.playing = true; state.liveStep = false; updateReadouts(); } };
     $('btn-pause').onclick = () => { state.playing = state.turbo = false; updateReadouts(); updateStatus(); };
     $('btn-reset').onclick = () => { resetRun(); updateReadouts(); updateStatus(); };
@@ -1989,9 +2178,12 @@ function tick() {
 function init() {
     canvas = $('viewport'); ctx = canvas.getContext('2d'); container = $('viewport-container');
     buildColors(); buildRuleWidgets(); setupEvents(); resizeCanvas();
-    $('input-program').value = PROGRAMS.fib;
-    $('input-script').value = SCRIPTS.fib;
+    fillExampleSelect($('select-program'), PROGRAM_LABELS);
+    fillExampleSelect($('select-script'), SCRIPT_LABELS);
+    setExample('program');
+    setExample('script');
     $('input-expr').value = EXPRS.adder;
+    updateSizeTexts();
     showTaskPanel();
     compile();
     requestAnimationFrame(tick);

@@ -66,7 +66,7 @@ layers. Both options are pure wiring and give the same depth.
 - **Original:** every input enters at layer 1, and every gate is placed as early
   as possible.
 
-For the CPU:
+For the default CPU (64 instructions / 16 bytes):
 
 | Layout   | Row width   | Wire slots | Cells per cycle |
 |----------|-------------|------------|-----------------|
@@ -78,13 +78,30 @@ For the CPU:
 | | |
 |---|---|
 | Data | 8-bit, 4 registers `r0`–`r3`, wrap-around arithmetic |
-| RAM | 16 bytes |
-| Program ROM | 64 instructions × 16 bits |
-| Circuit | 4,634 gates (4,492 NAND, 92 OR, 50 XOR), 47 layers per cycle |
-| Per cycle | 1,191 input bits (state + ROM + RAM) → 176 output bits |
+| CPU size | selectable: ROM 32 / 64 / 128 instructions, RAM 16 or 32 bytes |
+| Circuit | size-dependent, see the table below |
 
 The ROM is fed in as input bits every cycle, so the circuit is the same for
-every program.
+every program of a given size.
+
+**CPU size.** The ROM and RAM selectors (next to *Fabric layout*) choose the
+CPU's dimensions. Changing them rebuilds the circuit: a bigger ROM widens the
+PC and the ROM mux, and 32-byte RAM adds a fifth bit to the memory offset.
+Programs that no longer fit (too many instructions, offsets or arrays past the
+RAM end) are rejected at compile time. Measured with the compact layout:
+
+| ROM | RAM | Gates | Layers | Row width | Cells/cycle | Input bits |
+|-----|-----|-------|--------|-----------|-------------|------------|
+| 32  | 16  | 3,088 | 45 | 573  | 17.0k | 678  |
+| 64  | 16  | 4,634 | 47 | 729  | 19.5k | 1,191 |
+| 128 | 16  | 7,716 | 49 | 1,341 | 28.9k | 2,216 |
+| 32  | 32  | 3,969 | 45 | 969  | 23.2k | 806  |
+| 64  | 32  | 5,515 | 47 | 975  | 28.0k | 1,319 |
+| 128 | 32  | 8,597 | 49 | 1,446 | 32.9k | 2,344 |
+
+The default 64-instruction / 16-byte CPU is the original one: 4,634 gates
+(4,492 NAND, 92 OR, 50 XOR), 47 layers, 729 cells wide, 1,191 input bits per
+cycle.
 
 ### Instruction set
 
@@ -97,7 +114,7 @@ every program.
 | `ADD` / `SUB` / `AND` / `OR` / `XOR rd, rs` | `rd = rd op rs` |
 | `SHL rd` / `SHR rd` | shift by 1 (`SHL` is shorthand for `ADD rd, rd`) |
 | `ADDI rd, imm` | `rd = rd + imm` (imm −128..255) |
-| `LD rd, [rs+k]` / `ST rd, [rs+k]` | load / store `RAM[(rs + k) mod 16]`, k = 0..15 |
+| `LD rd, [rs+k]` / `ST rd, [rs+k]` | load / store `RAM[(rs + k) mod RAM]`, k = 0..15 (16-byte) or 0..31 (32-byte) |
 | `LD rd, [k]` / `ST rd, [k]` | load / store a fixed address |
 | `JMP label` | jump |
 | `JZ` / `JNZ rd, label` | jump if `rd` is zero / non-zero |
@@ -108,9 +125,10 @@ every program.
 Labels are `name:`, and comments start with `;` or `#`. The memory
 instruction took over the opcode `SHL` used to have.
 
-**RAM.** RAM is stored exactly like the registers: the host latches its 128 bits
-between cycles. The address adder, the 16-way read selector and the write-back
-of every byte are computed in the fabric.
+**RAM.** RAM is stored exactly like the registers: the host latches its 128
+(16-byte) or 256 (32-byte) bits between cycles. The address adder, the
+16-/32-way read selector and the write-back of every byte are computed in the
+fabric.
 
 ## The script language
 
@@ -144,7 +162,7 @@ while (n != 1) {
 **Arrays.** Declare them with `let v = [1, 2, 3];` (constant values) or
 `let v[8];` (zeros). Use them as `v[i]`, `v[i + 1] = x`, `v[i] += 2` and
 `v[i]++`. A constant offset such as `i + 1` goes straight into the instruction's
-offset. There is no bounds checking: addresses wrap at 16.
+offset. There is no bounds checking: addresses wrap at the RAM size (16 or 32).
 
 **Where values live:**
 - Arrays are laid out in RAM from address 0.
@@ -161,8 +179,8 @@ offset. There is no bounds checking: addresses wrap at 16.
 - There are no multiply or divide instructions, so `*` works only with a
   constant power of two, and `/` and `%` need a loop.
 - There are no functions.
-- Everything must fit in 64 instructions and 16 bytes of RAM (arrays plus
-  spilled variables).
+- Everything must fit in the selected ROM (32–128 instructions) and RAM
+  (16 or 32 bytes): arrays plus spilled variables.
 
 **Code generation:** loops are emitted with the test at the bottom, so every
 condition needs only a "jump if true". Jumps to the very next instruction are
@@ -173,15 +191,24 @@ removed.
 `$RAND` in an example is replaced by a fresh random byte each time you press
 Load.
 
+Examples come in two sets, chosen by the selected **RAM size**: with 16-byte
+RAM the smaller data is used, and switching to 32-byte RAM substitutes the
+doubled versions (bigger arrays, stacks and spills that fill the extra room).
+Pressing **Load** always substitutes the version that matches the current RAM
+size; changing the size re-substitutes an example that is still loaded. A few
+of the larger ones — the sieve's 32 flags and the 20-element reversal — need
+the 32-byte CPU and won't compile on the 16-byte one.
+
 **Script** (18): 16-bit Fibonacci, multiply by shift-and-add, GCD, primes below 40,
-countdown, Collatz, bubble sort of 8 in a RAM array, sieve of Eratosthenes,
-reverse an array, running totals, a stack (push then pop), 8 variables spilling
-to RAM, bubble sort of 4 in registers, sine & cosine, random numbers (LCG),
+countdown, Collatz, bubble sort of 8/16 in a RAM array, sieve of Eratosthenes
+(primes < 16 / < 32), reverse an array of 10/20, running totals over 8/16
+elements, a stack of 8/16 (push then pop), 8/12 variables spilling to RAM,
+bubble sort of 4 in registers, sine & cosine, random numbers (LCG),
 divide with remainder, integer square root, and counting 1 bits.
 
 **Assembly** (10): 16-bit Fibonacci, multiply, GCD, primes, countdown, bubble sort of 4
-(XOR swaps), sine & cosine, random numbers, bubble sort of 8 with `LD`/`ST`, and
-an array sum with `.data`.
+(XOR swaps), sine & cosine, random numbers, bubble sort of 8/16 with `LD`/`ST`,
+and an array sum of 8/16 with `.data`.
 
 **16-bit Fibonacci** runs on the 8-bit CPU by keeping each number as two bytes
 and carrying from the low byte into the high byte by hand. It prints all 25
@@ -264,7 +291,7 @@ Fibonacci numbers below 65,536, ending at 46,368.
   - the program counter and next instruction
   - the registers, and variables by name
   - array contents
-  - the 16 RAM bytes, with the last byte written marked `*`
+  - all RAM bytes (16 or 32), with the last byte written marked `*`
   - the OUT list
 - **OUT plot:** a small line chart of the OUT values. A `plot: sin, cos` comment
   in the program splits the alternating outputs into named series with a
@@ -280,7 +307,7 @@ The Diagnostics panel runs two independent checks on every cycle:
 - **fabric ≡ circuit:** the Rule 110 fabric's outputs match a direct evaluation of
   the gate circuit.
 - **circuit ≡ task:** the results match a separate JavaScript reference: a CPU
-  emulator stepped in lockstep (registers, PC, output and all 16 RAM bytes),
+  emulator stepped in lockstep (registers, PC, output and every RAM byte),
   JavaScript arithmetic, or JavaScript expression evaluation.
 
 During development, all 28 examples and fuzzed random programs were run through
