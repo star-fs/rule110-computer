@@ -1,0 +1,494 @@
+:root {
+    --bg-color: #0f172a;
+    --sidebar-bg: #1e293b;
+    --text-color: #f1f5f9;
+    --accent-color: #38bdf8;
+    --grid-line: #475569;
+    --btn-hover: #0ea5e9;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    height: 100vh;
+    overflow: hidden;
+}
+
+#app {
+    display: flex;
+    height: 100%;
+}
+
+#controls {
+    width: 320px;
+    background-color: var(--sidebar-bg);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    border-right: 1px solid var(--grid-line);
+    overflow-y: auto;
+}
+
+h1 {
+    font-size: 1.3rem;
+    color: var(--accent-color);
+}
+
+h3 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    margin-bottom: 8px;
+}
+
+.blurb {
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: #94a3b8;
+}
+
+.blurb strong {
+    color: var(--accent-color);
+}
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.3);
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(71, 85, 105, 0.2);
+}
+
+.button-row {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+button {
+    flex: 1;
+    background-color: #334155;
+    color: white;
+    border: none;
+    padding: 7px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: background-color 0.2s;
+    min-width: 60px;
+}
+
+button.active {
+    background-color: var(--accent-color);
+    color: #0f172a;
+    font-weight: 600;
+}
+
+button:hover:not(:disabled) {
+    background-color: var(--btn-hover);
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+label {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.8rem;
+    gap: 4px;
+}
+
+label.checkbox-label {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+}
+
+label.checkbox-label input {
+    width: auto;
+}
+
+input[type="number"], select {
+    background-color: #0f172a;
+    border: 1px solid var(--grid-line);
+    color: white;
+    padding: 5px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent-color);
+}
+
+.readout {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: #cbd5e1;
+    white-space: pre-wrap;
+}
+
+#diagnostics {
+    font-family: monospace;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: #cbd5e1;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.control-list {
+    list-style: none;
+    font-size: 0.78rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    color: #94a3b8;
+}
+
+.control-list li strong {
+    color: var(--accent-color);
+}
+
+#viewport-container {
+    flex: 1;
+    position: relative;
+    background-color: #020617;
+    cursor: grab;
+}
+
+#viewport-container:active {
+    cursor: grabbing;
+}
+
+#viewport {
+    width: 100%;
+    height: 100%;
+}
+
+#status-bar {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid var(--grid-line);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-family: monospace;
+    font-size: 0.78rem;
+    color: var(--accent-color);
+    pointer-events: none;
+}
+
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--sidebar-bg);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--grid-line);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-color);
+}
+
+.stats {
+    font-family: monospace;
+    font-size: 0.95rem;
+    padding-top: 12px;
+    border-top: 1px solid var(--grid-line);
+}
+
+.app-footer {
+    font-size: 0.75rem;
+    color: #64748b;
+    text-align: center;
+}
+
+textarea {
+    background-color: #0f172a;
+    border: 1px solid var(--grid-line);
+    color: #e2e8f0;
+    padding: 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    resize: vertical;
+    tab-size: 4;
+}
+
+input[type="text"] {
+    background-color: #0f172a;
+    border: 1px solid var(--grid-line);
+    color: white;
+    padding: 5px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.hidden {
+    display: none !important;
+}
+
+#output {
+    font-family: monospace;
+    font-size: 0.72rem;
+    line-height: 1.45;
+    color: #e2e8f0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+#output.error {
+    color: #f87171;
+}
+
+#rule-table {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+}
+
+.rule-case {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+.rule-case .trio {
+    display: flex;
+    gap: 1px;
+}
+
+.rule-case span {
+    width: 8px;
+    height: 8px;
+    background: #1e293b;
+    border: 1px solid #334155;
+}
+
+.rule-case span.on {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+.legend {
+    list-style: none;
+    font-family: monospace;
+    font-size: 0.72rem;
+    color: #cbd5e1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.legend i {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 6px;
+    vertical-align: -1px;
+    border-radius: 2px;
+}
+
+#status-bar {
+    max-width: calc(100% - 90px);
+    white-space: pre-wrap;
+}
+
+#status-bar {
+    top: auto;
+    bottom: 12px;
+}
+
+#viewport-container,
+#viewport-container:active {
+    cursor: crosshair;
+}
+
+#tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid var(--accent-color);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-family: monospace;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: #e2e8f0;
+    white-space: pre;
+    z-index: 10;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+#viewport-container.panning,
+#viewport-container.panning:active {
+    cursor: grabbing;
+}
+
+#compiled-asm {
+    font-family: monospace;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    color: #cbd5e1;
+    white-space: pre;
+    overflow: auto;
+    max-height: 260px;
+    margin-top: 6px;
+    padding: 6px;
+    background: #0f172a;
+    border: 1px solid var(--grid-line);
+    border-radius: 4px;
+}
+
+.asm-details {
+    white-space: normal;
+}
+
+
+#out-plot {
+    display: block;
+    width: 100%;
+    height: 130px;
+    background: #0f172a;
+    border: 1px solid var(--grid-line);
+    border-radius: 4px;
+    cursor: crosshair;
+}
+
+.legend-sub {
+    font-size: 0.68rem;
+    color: #94a3b8;
+    margin-top: 4px;
+}
+
+#gate-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-family: monospace;
+    font-size: 0.72rem;
+    color: #cbd5e1;
+}
+
+.gate-row {
+    display: grid;
+    grid-template-columns: 58px 1fr;
+    align-items: center;
+    gap: 6px;
+}
+
+.gate-name {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+    position: relative;
+    padding-left: 14px;
+}
+
+.gate-name i {
+    position: absolute;
+    left: 0;
+    top: 2px;
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+}
+
+.gate-pat {
+    font-size: 0.64rem;
+    color: #94a3b8;
+}
+
+.gate-pat b {
+    color: #f59e0b;
+}
+
+.gate-cases {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+}
+
+.case {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    cursor: help;
+}
+
+.case .cells {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+}
+
+.case .cell {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 1px;
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.35);
+}
+
+.case .arrow {
+    color: #64748b;
+    font-size: 0.58rem;
+    margin: 0 1px;
+}
+
+.case .ab {
+    font-size: 0.58rem;
+    color: #64748b;
+}
+
+#colour-key {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px 8px;
+    font-size: 0.68rem;
+    color: #cbd5e1;
+}
+
+.key {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    white-space: nowrap;
+}
+
+.key i {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+}
+
+.key span {
+    margin-left: 4px;
+}

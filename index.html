@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rule 110 Computer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <aside id="controls">
+            <h1>Rule 110 Computer</h1>
+            <p class="blurb">
+                An experimental computer whose every logic gate is a single <strong>Rule 110</strong>
+                cell update. A task is compiled to a circuit, the circuit is scheduled into
+                <strong>layers</strong>, and each layer is one row of cells evolved one Rule 110
+                generation. The host bus only copies bits between rows (wires) and supplies constant
+                rails — it performs no logic. The canvas is the resulting spacetime diagram.
+            </p>
+
+            <section class="control-group">
+                <h3>Controls</h3>
+                <ul class="control-list">
+                    <li><strong>Hover:</strong> Inspect cell / gate / wiring</li>
+                    <li><strong>Scroll:</strong> Zoom (out to full layer width)</li>
+                    <li><strong>Right / middle drag:</strong> Pan horizontally / vertically</li>
+                    <li><strong>Space:</strong> Play / Pause</li>
+                    <li><strong>N / C:</strong> Step layer / Step cycle</li>
+                    <li><strong>I:</strong> Invert colors</li>
+                </ul>
+            </section>
+
+            <section class="control-group">
+                <h3>The Rule</h3>
+                <div class="legend-sub">Rule 110 · (left, centre, right) → new centre</div>
+                <div id="rule-table"></div>
+                <div class="legend-sub">Gate triples · rail sets the gate, a b are inputs</div>
+                <div id="gate-legend"></div>
+                <div class="legend-sub">Canvas colours · bright = 1, dark = 0</div>
+                <div id="colour-key"></div>
+            </section>
+
+            <section class="control-group">
+                <h3>Task</h3>
+                <label>
+                    Task type:
+                    <select id="select-task">
+                        <option value="script">Script (JavaScript-style → CPU)</option>
+                        <option value="cpu">CPU assembly (8-bit, 4 registers)</option>
+                        <option value="arith">Arithmetic (A op B)</option>
+                        <option value="expr">Boolean expressions (truth table)</option>
+                        <option value="classic">Classic free run (pure Rule 110)</option>
+                    </select>
+                </label>
+
+                <div id="panel-script" class="control-group hidden">
+                    <div class="button-row">
+                        <select id="select-script">
+                            <option value="fib">Fibonacci (16-bit)</option>
+                            <option value="mul">Multiply 13 × 11</option>
+                            <option value="gcd">GCD(84, 36)</option>
+                            <option value="primes">Primes below 40</option>
+                            <option value="countdown">Countdown 10 → 0</option>
+                            <option value="collatz">Collatz from 7</option>
+                            <option value="sort8">Bubble sort of 8 (array in RAM)</option>
+                            <option value="sieve">Sieve of Eratosthenes (primes &lt; 16)</option>
+                            <option value="reverse">Reverse an array</option>
+                            <option value="running">Running totals</option>
+                            <option value="stack">Stack: push then pop</option>
+                            <option value="manyvars">8 variables (spill to RAM)</option>
+                            <option value="bubble">Bubble sort (4 in registers)</option>
+                            <option value="sincos">Sine &amp; cosine (Minsky circle)</option>
+                            <option value="lcg">Random numbers (LCG)</option>
+                            <option value="divmod">Divide 200 / 7 with remainder</option>
+                            <option value="isqrt">Integer square root of 200</option>
+                            <option value="popcount">Count 1 bits</option>
+                        </select>
+                        <button id="btn-load-script">Load</button>
+                    </div>
+                    <label>
+                        Script:
+                        <textarea id="input-script" rows="14" spellcheck="false" wrap="off"></textarea>
+                    </label>
+                    <details class="readout">
+                        <summary>Language</summary>
+let a = 1, b;        variables: the most-used go
+                     in the 4 registers, extras in RAM
+let v = [3, 1, 4];   array in RAM (constants)
+let buf[8];          array of 8 zeros
+v[i]  v[i + 1] = x;  v[i] += 2;  v[i]++;
+                     (16 bytes of RAM in all;
+                     no bounds check: wraps at 16)
+a = b + 3;  a += 2;  a++;  a--;
++ - &amp; | ^ ~ &lt;&lt; &gt;&gt;   8-bit, wraps at 256
+* by a power of two  (no mul/div hardware)
+&lt; &gt; &lt;= &gt;= == != &amp;&amp; || !   unsigned
+if (c) { } else { }
+while (c) { }   for (let i = 0; i &lt; 9; i++) { }
+break;  continue;
+out(expr);   halt();
+// comments  /* comments */
+Complex expressions need spare registers;
+the compiler moves variables to RAM to free them.
+                    </details>
+                    <details class="readout asm-details" open><summary>Compiled assembly (<span id="compiled-size">—</span>/64 instructions)</summary><pre id="compiled-asm"></pre></details>
+                    <label>
+                        Max cycles: <input type="number" id="input-max-cycles-script" value="20000" min="1">
+                    </label>
+                </div>
+
+                <div id="panel-cpu" class="control-group hidden">
+                    <div class="button-row">
+                        <select id="select-program">
+                            <option value="fib">Fibonacci (16-bit)</option>
+                            <option value="mul">Multiply 13 × 11 (shift-add)</option>
+                            <option value="gcd">GCD(84, 36)</option>
+                            <option value="primes">Primes below 40</option>
+                            <option value="countdown">Countdown 10 → 0</option>
+                            <option value="bubble">Bubble sort (4 in registers)</option>
+                            <option value="sincos">Sine &amp; cosine (Minsky circle)</option>
+                            <option value="lcg">Random numbers (LCG)</option>
+                            <option value="sort8">Bubble sort of 8 in RAM (LD/ST)</option>
+                            <option value="sum">Array sum (.data + LD)</option>
+                        </select>
+                        <button id="btn-load-program">Load</button>
+                    </div>
+                    <label>
+                        Program (≤ 64 instructions, .data for RAM):
+                        <textarea id="input-program" rows="14" spellcheck="false" wrap="off"></textarea>
+                    </label>
+                    <details class="readout">
+                        <summary>Instruction set</summary>
+HALT            stop
+NOP             (MOV r0, r0)
+LDI  rd, imm    rd = imm
+MOV  rd, rs     rd = rs
+ADD  rd, rs     rd = rd + rs
+SUB  rd, rs     rd = rd - rs
+AND/OR/XOR rd, rs
+SHL  rd         rd = rd &lt;&lt; 1 (= ADD rd, rd)
+SHR  rd         rd = rd &gt;&gt; 1
+LD   rd, [rs+k] rd = RAM[(rs + k) mod 16]
+ST   rd, [rs+k] RAM[(rs + k) mod 16] = rd
+LD/ST rd, [k]   fixed address k (0-15)
+.data 1, 2, 3   preload RAM from address 0
+ADDI rd, imm    rd = rd + imm (-128..255)
+JMP  label
+JZ   rd, label  jump if rd == 0
+JNZ  rd, label  jump if rd != 0
+JLT  rd, rs, label  jump if rd &lt; rs (unsigned)
+OUT  rd         append rd to output
+regs r0-r3, 16-byte RAM, 8-bit wrap;
+; or # comments
+                    </details>
+                    <label>
+                        Max cycles: <input type="number" id="input-max-cycles" value="20000" min="1">
+                    </label>
+                </div>
+
+                <div id="panel-arith" class="control-group hidden">
+                    <label>
+                        Operation:
+                        <select id="select-op">
+                            <option value="add">A + B</option>
+                            <option value="sub">A − B</option>
+                            <option value="mul" selected>A × B</option>
+                            <option value="and">A AND B</option>
+                            <option value="or">A OR B</option>
+                            <option value="xor">A XOR B</option>
+                            <option value="lt">A &lt; B</option>
+                            <option value="eq">A == B</option>
+                            <option value="max">max(A, B)</option>
+                        </select>
+                    </label>
+                    <label>
+                        Operand width:
+                        <select id="select-bits">
+                            <option value="4">4 bits</option>
+                            <option value="8" selected>8 bits</option>
+                            <option value="12">12 bits</option>
+                            <option value="16">16 bits</option>
+                        </select>
+                    </label>
+                    <label>
+                        A: <input type="number" id="input-a" value="173" min="0">
+                    </label>
+                    <label>
+                        B: <input type="number" id="input-b" value="58" min="0">
+                    </label>
+                </div>
+
+                <div id="panel-expr" class="control-group hidden">
+                    <div class="button-row">
+                        <select id="select-expr">
+                            <option value="adder">Full adder</option>
+                            <option value="maj">Majority of 3</option>
+                            <option value="mux">2:1 multiplexer</option>
+                            <option value="parity">5-bit parity</option>
+                            <option value="demorgan">De Morgan check</option>
+                        </select>
+                        <button id="btn-load-expr">Load</button>
+                    </div>
+                    <label>
+                        Expressions (one per line, as name = expr):
+                        <textarea id="input-expr" rows="4" spellcheck="false"></textarea>
+                    </label>
+                    <div class="readout">ops: ~ ! (not) · &amp; (and) · ^ (xor) · | (or) · 0 1 · ( ) — up to 6 variables; every truth-table row is computed in parallel lanes of one fabric pass</div>
+                </div>
+
+                <div id="panel-classic" class="control-group hidden">
+                    <label>
+                        Start row:
+                        <select id="select-classic-start">
+                            <option value="right">Single cell at right edge (Wikipedia image)</option>
+                            <option value="center">Single cell in the centre</option>
+                            <option value="random">Random</option>
+                            <option value="ether">Ether background</option>
+                            <option value="custom">Custom pattern</option>
+                        </select>
+                    </label>
+                    <label>
+                        Custom pattern (0/1, placed at right edge):
+                        <input type="text" id="input-classic-pattern" value="11111000100110111110001001101110011111000100110">
+                    </label>
+                    <label>
+                        Random density: <input type="range" id="input-classic-density" min="0.05" max="0.95" step="0.05" value="0.5">
+                    </label>
+                    <label>
+                        Width (cells): <input type="number" id="input-classic-width" value="257" min="8" max="4000">
+                    </label>
+                    <label>
+                        Generations: <input type="number" id="input-classic-gens" value="256" min="1" max="20000">
+                    </label>
+                    <label>
+                        Edges:
+                        <select id="select-classic-edge">
+                            <option value="dead">Dead cells beyond the edges</option>
+                            <option value="wrap">Wrap around (ring)</option>
+                        </select>
+                    </label>
+                    <label>
+                        Style:
+                        <select id="select-classic-style">
+                            <option value="image">Classic (black on grey)</option>
+                            <option value="gliders">Gliders highlighted (ether dimmed)</option>
+                            <option value="app">App colours</option>
+                        </select>
+                    </label>
+                </div>
+
+                <label>
+                    Fabric layout:
+                    <select id="select-layout">
+                        <option value="compact">Compact (inputs loaded where used)</option>
+                        <option value="original">Original (all inputs at layer 1)</option>
+                    </select>
+                </label>
+                <div class="button-row">
+                    <button id="btn-compile">Compile &amp; Reset</button>
+                </div>
+            </section>
+
+            <section class="control-group">
+                <h3>Run</h3>
+                <div class="button-row">
+                    <button id="btn-play">Play</button>
+                    <button id="btn-pause" disabled>Pause</button>
+                    <button id="btn-reset">Reset</button>
+                </div>
+                <div class="button-row">
+                    <button id="btn-step-layer">Step layer</button>
+                    <button id="btn-step-cycle">Step cycle</button>
+                    <button id="btn-run-end">Run to end</button>
+                </div>
+                <label>
+                    Speed: <input type="range" id="input-speed" min="0" max="100" value="20">
+                    <span id="speed-value">1 layer/frame</span>
+                </label>
+            </section>
+
+            <section class="control-group">
+                <h3>Rendering</h3>
+                <label>
+                    Color mode:
+                    <select id="select-color-mode">
+                        <option value="roles">Roles (rails / operands / gate results)</option>
+                        <option value="raw">Raw Rule 110 (alive / dead)</option>
+                    </select>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="input-show-load" checked> Show load rows (host wiring)
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="input-highlight-out" checked> Highlight output cells + read-back
+                </label>
+                <div class="button-row">
+                    <button id="btn-invert">Invert Colors (I)</button>
+                </div>
+            </section>
+
+            <section class="control-group">
+                <h3>Output</h3>
+                <pre id="output">—</pre>
+                <canvas id="out-plot" class="hidden" aria-label="Plot of the OUT values"></canvas>
+            </section>
+
+            <section class="control-group">
+                <h3>Diagnostics</h3>
+                <pre id="diagnostics">—</pre>
+            </section>
+
+            <div class="stats">
+                Cycle: <span id="stat-cycle">0</span> · Layer: <span id="stat-layer">0</span>
+            </div>
+
+            <footer class="app-footer">
+                &copy;opyleft 2026 star morin
+            </footer>
+        </aside>
+
+        <main id="viewport-container">
+            <canvas id="viewport"></canvas>
+            <div id="status-bar">Compiling...</div>
+            <div id="tooltip" class="hidden"></div>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
