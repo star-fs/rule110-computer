@@ -77,7 +77,7 @@ For the default CPU (64 instructions / 16 bytes):
 
 | | |
 |---|---|
-| Data | 8-bit, 4 registers `r0`–`r3`, wrap-around arithmetic |
+| Data | 8-bit, 4 registers `r0`–`r3`, reach-around arithmetic |
 | CPU size | selectable: ROM 32 / 64 / 128 instructions, RAM 16 or 32 bytes |
 | Circuit | size-dependent, see the table below |
 
